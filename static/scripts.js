@@ -2,7 +2,12 @@
 
 document.addEventListener('DOMContentLoaded', () => {
 
-    const socket = io();
+    // ❗ FIX FOR RENDER: Force polling only (NO WEBSOCKETS)
+    const socket = io({
+        transports: ["polling"],
+        upgrade: false
+    });
+
     let currentUserId = sessionStorage.getItem('smartQueueUserId');
     const views = document.querySelectorAll('.view-card');
     const navLinks = document.querySelectorAll('.nav-link');
@@ -95,7 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tableBody = document.getElementById('queue-table-body');
         const emptyMsg = document.getElementById('empty-queue-message');
         
-        tableBody.innerHTML = ''; 
+        tableBody.innerhtml = ""; 
         
         if (!queue || queue.length === 0) {
             emptyMsg.style.display = 'block';
@@ -109,10 +114,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     : 'N/A';
                 
                 const waitTime = user.wait_time !== undefined ? user.wait_time : '--';
-                // THIS IS THE NEW DATA
                 const serveBy = user.serve_by || '--'; 
 
-                // THE CHANGE IS HERE
                 row.innerHTML = `
                     <td>${index + 1}</td>
                     <td>${user.user_name || user.user_id}</td>
