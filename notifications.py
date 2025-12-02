@@ -1,20 +1,55 @@
 # notifications.py
-# SAFE VERSION FOR RENDER (SMTP Disabled, Logs Only)
+# SmartQueue – Gmail App Password + Render-Safe Fallback
 
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from config import EMAIL_ADDRESS, EMAIL_PASSWORD
 import logging
+import time
+
 
 def send_email(to_email, subject, body):
     """
-    Render Free Tier blocks Gmail/SMTP.
-    So instead of sending real emails, we LOG them safely.
-
-    Your app will continue working without errors.
+    This function tries to send an email through Gmail.
+    If Render blocks SMTP (common on free tier), it falls back to LOG-ONLY mode.
     """
 
-    logging.info("\n📧 EMAIL LOGGED (NOT SENT)")
-    logging.info(f"To: {to_email}")
-    logging.info(f"Subject: {subject}")
-    logging.info(f"Body:\n{body}\n")
+    # ----------- BUILD EMAIL -----------
+    msg = MIMEMultipart()
+    msg["From"] = EMAIL_ADDRESS
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
 
-    # Always return True so the app thinks email was delivered
-    return True
+    try:
+        # Small delay for Render’s cold start
+        time.sleep(1)
+
+        logging.info("📨 Attempting to send email via Gmail SMTP...")
+
+        # ----------- CONNECT TO GMAIL SMTP -----------
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+
+        # ----------- LOGIN USING APP PASSWORD -----------
+        server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+
+        # ----------- SEND EMAIL -----------
+        server.sendmail(EMAIL_ADDRESS, to_email, msg.as_string())
+        server.quit()
+
+        logging.info(f"✅ Email successfully SENT to {to_email}")
+        return True
+
+    except Exception as e:
+        # ----------- FALLBACK: SAFE LOGGING -----------
+        logging.error(f"❌ Email SEND FAILED: {e}")
+        logging.info("\n📧 EMAIL LOGGED (NOT SENT — Render SMTP Blocked)")
+        logging.info(f"To: {to_email}")
+        logging.info(f"Subject: {subject}")
+        logging.info(f"Body:\n{body}\n")
+
+        return False
