@@ -1,22 +1,20 @@
 # notifications.py
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from config import EMAIL_ADDRESS, EMAIL_PASSWORD
+# SAFE VERSION FOR RENDER (SMTP Disabled, Logs Only)
+
+import logging
 
 def send_email(to_email, subject, body):
-    msg = MIMEMultipart()
-    msg['From'] = EMAIL_ADDRESS
-    msg['To'] = to_email
-    msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'plain'))
+    """
+    Render Free Tier blocks Gmail/SMTP.
+    So instead of sending real emails, we LOG them safely.
 
-    try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-        server.sendmail(EMAIL_ADDRESS, to_email, msg.as_string())
-        server.quit()
-        print("✅ Email sent to", to_email)
-    except Exception as e:
-        print("❌ Error sending email:", e)
+    Your app will continue working without errors.
+    """
+
+    logging.info("\n📧 EMAIL LOGGED (NOT SENT)")
+    logging.info(f"To: {to_email}")
+    logging.info(f"Subject: {subject}")
+    logging.info(f"Body:\n{body}\n")
+
+    # Always return True so the app thinks email was delivered
+    return True
