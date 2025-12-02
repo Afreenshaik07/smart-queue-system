@@ -10,8 +10,17 @@ from ml_model import initialize_wait_model, predict_wait_time, refresh_wait_mode
 
 # --- Basic Setup ---
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'a-truly-secret-key-that-is-safe' 
-socketio = SocketIO(app, cors_allowed_origins="*")
+app.config['SECRET_KEY'] = 'a-truly-secret-key-that-is-safe'
+
+# 🔥 FINAL FIX FOR RENDER DEPLOYMENT (NO WEBSOCKETS)
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode="threading",
+    allow_upgrades=False,        # disable websocket upgrade
+    transports=["polling"]        # force long polling only
+)
+
 logging.basicConfig(level=logging.INFO)
 
 # --- In-Memory Data Store ---
@@ -21,8 +30,8 @@ ADMIN_ID = "admin"
 ADMIN_PASSWORD = "password"
 
 # --- NEW: Data store for model training ---
-WAIT_LOG = [] # Stores actual wait times to feed back to the model
-SERVED_COUNT_FOR_RETRAIN = 0 # Counter to trigger retraining
+WAIT_LOG = []  # Stores actual wait times to feed back to the model
+SERVED_COUNT_FOR_RETRAIN = 0  # Counter to trigger retraining
 
 # --- Helper Function (MODIFIED to use the ML model) ---
 def get_queue_details_for_frontend():
@@ -30,27 +39,26 @@ def get_queue_details_for_frontend():
     for i, user_data in enumerate(QUEUE):
         details = user_data.copy()
         join_time_obj = details.get('timestamp')
-        
-        position = i + 1
-        # --- MODIFICATION: Use the ML model for prediction ---
-        predicted_wait_minutes = predict_wait_time(position)
-        # --- End of modification ---
 
+        position = i + 1
+        predicted_wait_minutes = predict_wait_time(position)
         details['wait_time'] = round(predicted_wait_minutes, 1)
 
         if join_time_obj:
             details['join_time'] = join_time_obj.isoformat()
             serve_by_time_obj = join_time_obj + timedelta(minutes=predicted_wait_minutes)
-            details['serve_by'] = serve_by_time_obj.astimezone(timezone(timedelta(hours=5, minutes=30))).strftime('%I:%M %p')
+            details['serve_by'] = serve_by_time_obj.astimezone(
+                timezone(timedelta(hours=5, minutes=30))
+            ).strftime('%I:%M %p')
         else:
             details['join_time'] = None
             details['serve_by'] = '--'
-            
+
         if 'timestamp' in details:
             del details['timestamp']
-            
+
         detailed_queue.append(details)
-        
+
     return detailed_queue
 
 # --- HTTP Route ---
@@ -62,7 +70,7 @@ def index():
 
 @socketio.on('connect')
 def handle_connect():
-    logging.info(f"✅ Client connected. Serving queue data.")
+    logging.info("✅ Client connected. Serving queue data.")
     emit('queue_data', {'queue': get_queue_details_for_frontend()})
     emit('now_serving', {'user_id': NOW_SERVING})
 
@@ -75,7 +83,7 @@ def handle_join_queue(data):
     user_id = data.get('user_id')
     user_email = data.get('email')
     logging.info(f"👋 Join request received for user: {user_id}")
-    
+
     join_time_obj = datetime.now(timezone.utc)
     new_user = {
         'user_id': user_id,
@@ -84,15 +92,15 @@ def handle_join_queue(data):
         'timestamp': join_time_obj
     }
     QUEUE.append(new_user)
-    
+
     position = len(QUEUE)
-    # --- MODIFICATION: Use ML model for email prediction ---
     estimated_wait = predict_wait_time(position)
-    # --- End of modification ---
 
     if user_email:
         serve_by_time_obj = join_time_obj + timedelta(minutes=estimated_wait)
-        serve_by_time_str = serve_by_time_obj.astimezone(timezone(timedelta(hours=5, minutes=30))).strftime('%I:%M %p')
+        serve_by_time_str = serve_by_time_obj.astimezone(
+            timezone(timedelta(hours=5, minutes=30))
+        ).strftime('%I:%M %p')
 
         subject = "Queue Confirmation"
         body = (f"Hi {user_id},\n\n"
@@ -102,7 +110,11 @@ def handle_join_queue(data):
                 f"Expected to be served by: {serve_by_time_str} (IST)")
         send_email(user_email, subject, body)
 
-    emit('position_updated', {'user_id': user_id, 'position': position, 'estimated_wait': estimated_wait})
+    emit('position_updated', {
+        'user_id': user_id,
+        'position': position,
+        'estimated_wait': estimated_wait
+    })
     socketio.emit('queue_data', {'queue': get_queue_details_for_frontend()})
     logging.info(f"➡️ Queue updated. New size: {len(QUEUE)}")
 
@@ -114,41 +126,47 @@ def handle_next_user():
         NOW_SERVING = served_user.get('user_name')
         logging.info(f"🔔 Now serving: {NOW_SERVING}")
 
-        # --- NEW: Log actual wait time for the served user ---
         time_joined = served_user.get('timestamp')
         if time_joined:
             time_served = datetime.now(timezone.utc)
             actual_wait_duration_seconds = (time_served - time_joined).total_seconds()
             WAIT_LOG.append({'duration': actual_wait_duration_seconds})
-            logging.info(f"📊 Logged actual wait time for {NOW_SERVING}: {actual_wait_duration_seconds:.2f} seconds.")
-            
-            # --- NEW: Trigger model retraining every 5 users ---
+            logging.info(
+                f"📊 Logged actual wait time for {NOW_SERVING}: "
+                f"{actual_wait_duration_seconds:.2f} seconds."
+            )
+
             SERVED_COUNT_FOR_RETRAIN += 1
             if SERVED_COUNT_FOR_RETRAIN >= 5:
-                logging.info("🔄 Reached 5 served users. Triggering model retraining...")
+                logging.info("🔄 Retraining model with new wait time data...")
                 refresh_wait_model(WAIT_LOG)
-                SERVED_COUNT_FOR_RETRAIN = 0 # Reset counter
-        # --- End of new logic ---
+                SERVED_COUNT_FOR_RETRAIN = 0
 
         if len(QUEUE) >= 3:
             user_at_pos_3 = QUEUE[2]
             recipient_name = user_at_pos_3.get('user_name')
             recipient_email = user_at_pos_3.get('email')
-            
+
             if recipient_email:
-                estimated_remaining_wait = predict_wait_time(3) # Predict for position 3
-                serve_by_time_obj = datetime.now(timezone.utc) + timedelta(minutes=estimated_remaining_wait)
-                serve_by_time_str = serve_by_time_obj.astimezone(timezone(timedelta(hours=5, minutes=30))).strftime('%I:%M %p')
+                estimated_remaining_wait = predict_wait_time(3)
+                serve_by_time_obj = datetime.now(timezone.utc) + timedelta(
+                    minutes=estimated_remaining_wait
+                )
+                serve_by_time_str = serve_by_time_obj.astimezone(
+                    timezone(timedelta(hours=5, minutes=30))
+                ).strftime('%I:%M %p')
 
                 subject = "You're Getting Close!"
                 body = (f"Hi {recipient_name},\n\n"
                         f"You are now 3rd in the queue!\n\n"
-                        f"Estimated remaining wait time: {estimated_remaining_wait:.1f} minutes\n"
-                        f"You should be served by approximately: {serve_by_time_str} (IST)")
+                        f"Estimated remaining wait time: "
+                        f"{estimated_remaining_wait:.1f} minutes\n"
+                        f"You should be served by: {serve_by_time_str} (IST)")
                 send_email(recipient_email, subject, body)
     else:
         NOW_SERVING = None
         logging.info("🔔 Queue is empty.")
+
     socketio.emit('now_serving', {'user_id': NOW_SERVING})
     socketio.emit('queue_data', {'queue': get_queue_details_for_frontend()})
 
@@ -157,17 +175,15 @@ def handle_clear_queue():
     global QUEUE, NOW_SERVING
     QUEUE.clear()
     NOW_SERVING = None
-    logging.info("🗑️ Queue has been cleared.")
+    logging.info("🗑️ Queue cleared.")
     socketio.emit('now_serving', {'user_id': NOW_SERVING})
     socketio.emit('queue_data', {'queue': get_queue_details_for_frontend()})
 
 @socketio.on('admin_login')
 def handle_admin_login(data):
     if data.get('user_id') == ADMIN_ID and data.get('password') == ADMIN_PASSWORD:
-        logging.info("✅ Admin login successful.")
         emit('login_success')
     else:
-        logging.warning("❌ Admin login failed.")
         emit('login_failed')
 
 @socketio.on('get_queue')
@@ -176,7 +192,6 @@ def handle_get_queue():
 
 # --- Main Execution ---
 if __name__ == '__main__':
-    # --- NEW: Initialize the model on startup ---
     initialize_wait_model()
     logging.info("🚀 Starting SmartQueue Standalone Server...")
     socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
