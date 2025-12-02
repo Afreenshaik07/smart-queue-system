@@ -1,4 +1,4 @@
-# ml_model.py (FINAL VERSION – with default model + Render-safe)
+# ml_model.py (FINAL + AUTO INITIALIZE)
 
 from sklearn.linear_model import LinearRegression
 import numpy as np
@@ -65,7 +65,7 @@ def initialize_wait_model():
 
 
 # ------------------------------------------------------------
-# Optional: Training functions (still supported)
+# Optional: Training functions
 # ------------------------------------------------------------
 def prepare_training_data_from_log(wait_log):
     data = []
@@ -134,3 +134,9 @@ def predict_wait_time(position: int):
     except Exception as e:
         logging.error(f"❌ Prediction error: {e}")
         return 4.0
+
+
+# ------------------------------------------------------------
+# 🚀 AUTO-INITIALIZE MODEL (IMPORTANT!)
+# ------------------------------------------------------------
+initialize_wait_model()
