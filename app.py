@@ -1,63 +1,128 @@
-# app.py - FINAL FULL WORKING VERSION WITH SENDGRID
+from gevent import monkey
+monkey.patch_all()
 
-from flask import Flask, render_template, request
-import logging
-from queue_manager import QueueManager
-from ml_model import load_model, predict_wait_time
+from flask import Flask, render_template, request, jsonify
+from flask_socketio import SocketIO, emit
+from datetime import datetime, timedelta
+from queue_manager import manager
+from ml_model import predict_wait_time
 from notifications import send_email
+import logging
+
+app = Flask(__name__)
+socketio = SocketIO(app, async_mode="gevent", cors_allowed_origins="*")
 
 logging.basicConfig(level=logging.INFO)
 
-app = Flask(__name__)
 
-queue = QueueManager()
-model = load_model()
-
-
+# ---------------------------------------------------
+# ROOT PAGE
+# ---------------------------------------------------
 @app.route("/")
-def home():
+def index():
     return render_template("index.html")
 
 
-@app.route("/join", methods=["GET", "POST"])
+# ---------------------------------------------------
+# JOIN QUEUE (HTTP API)
+# ---------------------------------------------------
+@app.route("/join", methods=["POST"])
 def join_queue():
-    if request.method == "POST":
-        name = request.form["name"]
-        email = request.form["email"]
+    data = request.json
+    user_id = data.get("user_id")
+    email = data.get("email")
 
-        # Add user to queue
-        user_id = queue.add_user(name)
-        position = queue.get_position(user_id)
+    position = manager.add_user(user_id, email)
+    wait_minutes = predict_wait_time(position)
 
-        # Predict wait time using ML
-        wait_time = predict_wait_time(model, position)
+    # Expected serve time
+    expected_time = datetime.now() + timedelta(minutes=wait_minutes)
+    serve_by = expected_time.strftime("%I:%M %p")
 
-        # Send Email Notification
-        subject = "SmartQueue – You Joined the Queue"
-        body = (
-            f"Hi {name},\n\n"
-            f"You are successfully added to the queue.\n\n"
-            f"Your Position: {position}\n"
-            f"Estimated Wait Time: {wait_time:.1f} minutes\n\n"
-            f"Thanks for using SmartQueue ❤️"
-        )
+    # Send email
+    send_email(
+        to_email=email,
+        subject="Queue Confirmation",
+        body=f"Hi {user_id},\nYou joined the queue.\nYour position: {position}\nEstimated wait: {wait_minutes} minutes\nExpected serve time: {serve_by}"
+    )
 
-        send_email(email, subject, body)
-
-        return render_template(
-            "joined.html",
-            name=name,
-            position=position,
-            wait_time=wait_time,
-        )
-
-    return render_template("join.html")
+    socketio.emit("queue_data", {"queue": manager.get_queue()})
+    return jsonify({"position": position, "wait": wait_minutes})
 
 
-@app.route("/admin")
-def admin_page():
-    return render_template("admin.html")
+# ---------------------------------------------------
+# SOCKET.IO — Client Connected
+# ---------------------------------------------------
+@socketio.on("connect")
+def handle_connect():
+    logging.info("✅ Client connected.")
+    emit("queue_data", {"queue": manager.get_queue()})
 
 
+# ---------------------------------------------------
+# SOCKET.IO — Get Queue
+# ---------------------------------------------------
+@socketio.on("get_queue")
+def handle_get_queue():
+    emit("queue_data", {"queue": manager.get_queue()})
+
+
+# ---------------------------------------------------
+# SOCKET.IO — User Joins Queue
+# ---------------------------------------------------
+@socketio.on("join_queue")
+def handle_join_queue(data):
+    user_id = data["user_id"]
+    email = data["email"]
+
+    logging.info(f"👋 Join request received: {user_id}")
+
+    position = manager.add_user(user_id, email)
+    wait_minutes = predict_wait_time(position)
+
+    expected_time = datetime.now() + timedelta(minutes=wait_minutes)
+    serve_by = expected_time.strftime("%I:%M %p")
+
+    # Send email (via SendGrid)
+    send_email(
+        to_email=email,
+        subject="Queue Confirmation",
+        body=f"Hi {user_id},\nYou joined the queue.\nYour position: {position}\nEstimated wait: {wait_minutes} minutes\nExpected serve time: {serve_by}"
+    )
+
+    emit("position_updated", {
+        "user_id": user_id,
+        "position": position,
+        "estimated_wait": wait_minutes,
+    })
+
+    socketio.emit("queue_data", {"queue": manager.get_queue()}, broadcast=True)
+
+
+# ---------------------------------------------------
+# SOCKET.IO — Next User
+# ---------------------------------------------------
+@socketio.on("next_user")
+def handle_next_user():
+    served = manager.pop_user()
+
+    if served:
+        socketio.emit("now_serving", {"user_id": served["user_id"]}, broadcast=True)
+        socketio.emit("queue_data", {"queue": manager.get_queue()}, broadcast=True)
+    else:
+        socketio.emit("now_serving", {"user_id": None}, broadcast=True)
+
+
+# ---------------------------------------------------
+# SOCKET.IO — Disconnect
+# ---------------------------------------------------
+@socketio.on("disconnect")
+def handle_disconnect():
+    logging.info("❌ Client disconnected")
+
+
+# ---------------------------------------------------
+# RUN (Local Only)
+# ---------------------------------------------------
 if __name__ == "__main__":
-    app.run()
+    socketio.run(app, host="0.0.0.0", port=5000)
