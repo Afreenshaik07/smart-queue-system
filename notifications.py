@@ -1,31 +1,38 @@
-import requests
-from config import SENDGRID_API_KEY
+# notifications.py - FINAL WORKING SENDGRID VERSION
 
-def send_email(to_email, subject, body):
-    url = "https://api.sendgrid.com/v3/mail/send"
+import logging
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+from config import SENDGRID_API_KEY, SENDGRID_FROM_EMAIL
 
-    headers = {
-        "Authorization": f"Bearer {SENDGRID_API_KEY}",
-        "Content-Type": "application/json"
-    }
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("EmailService")
 
-    data = {
-        "personalizations": [{
-            "to": [{"email": to_email}],
-            "subject": subject
-        }],
-        "from": {"email": "d88368817@gmail.com"},   # your verified sender
-        "content": [{
-            "type": "text/plain",
-            "value": body
-        }]
-    }
 
-    response = requests.post(url, json=data, headers=headers)
+def send_email(to_email: str, subject: str, body: str) -> bool:
+    """Send email using SendGrid."""
 
-    if response.status_code == 202:
-        print("✅ Email sent successfully!")
-        return True
-    else:
-        print("❌ Email failed:", response.text)
+    if not SENDGRID_API_KEY:
+        logger.error("❌ SENDGRID_API_KEY missing! Check Render Environment Variables.")
         return False
+
+    try:
+        message = Mail(
+            from_email=SENDGRID_FROM_EMAIL,
+            to_emails=to_email,
+            subject=subject,
+            plain_text_content=body,
+        )
+
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+
+        logger.info(f"📧 Email sent successfully → {to_email} | STATUS: {response.status_code}")
+
+        return 200 <= response.status_code < 300
+
+    except Exception as e:
+        logger.error(f"❌ ERROR sending email to {to_email}: {e}")
+        return False
+
+

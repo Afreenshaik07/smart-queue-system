@@ -1,6 +1,12 @@
-EMAIL_ADDRESS = "d88368817@gmail.com"
-EMAIL_PASSWORD = "pehg gord dkbg lred"
+# config.py - FINAL VERSION
 
-SENDGRID_API_KEY = None   # DO NOT PUT REAL KEY HERE
+import os
+
 ADMIN_ID = "admin"
 ADMIN_PASSWORD = "admin"
+
+# SendGrid (stored securely in Render Environment Variables)
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+
+# MUST MATCH YOUR VERIFIED SENDGRID SENDER EMAIL
+SENDGRID_FROM_EMAIL = "d88368817@gmail.com"
