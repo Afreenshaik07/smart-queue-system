@@ -1,34 +1,29 @@
-import logging
-from datetime import datetime
-
 class QueueManager:
-
     def __init__(self):
         self.queue = []
-        logging.info("QueueManager initialized")
+        self.counter = 1
 
-    def add_user(self, user_id, email):
-        position = len(self.queue) + 1
-
+    def add_user(self, user, email):
         entry = {
-            "user_id": user_id,
-            "user_name": user_id,
-            "email": email,
-            "join_time": datetime.utcnow().isoformat(),
+            "id": self.counter,
+            "user": user,
+            "email": email
         }
-
         self.queue.append(entry)
-        logging.info(f"User added: {entry}")
-        return position
+        self.counter += 1
+        return entry["id"]
 
     def pop_user(self):
-        if not self.queue:
-            return None
-        return self.queue.pop(0)
+        if self.queue:
+            return self.queue.pop(0)
+        return None
 
     def get_queue(self):
         return self.queue
 
+    def queue_size(self):
+        return len(self.queue)
 
-# IMPORTANT: EXPORT manager instance
-manager = QueueManager()
+    def clear(self):
+        self.queue = []
+        self.counter = 1

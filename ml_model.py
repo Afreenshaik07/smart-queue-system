@@ -1,24 +1,24 @@
-# ml_model.py - FINAL FIXED VERSION
-
 import joblib
-import os
 import logging
+import os
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "wait_time_model.pkl")
+MODEL_PATH = "wait_time_model.pkl"
 
-model = None
+# Load model
+try:
+    model = joblib.load(MODEL_PATH)
+    logging.info("🚀 Model loaded successfully.")
+except Exception as e:
+    logging.error(f"⚠ Failed to load model: {e}")
+    model = None
 
-def load_model():
-    """Load ML model from file once and reuse it."""
-    global model
-    if model is None:
-        logging.info(f"📂 Loading model from {MODEL_PATH}")
-        model = joblib.load(MODEL_PATH)
-        logging.info("🚀 Model loaded successfully.")
-    return model
 
-def predict_wait_time(position):
-    """Predict wait time based on the queue position."""
-    mdl = load_model()
-    prediction = mdl.predict([[position]])
-    return float(prediction[0])
+def predict_wait_time(queue_length):
+    try:
+        if model:
+            pred = model.predict([[queue_length]])[0]
+            return round(float(pred), 2)
+        else:
+            return queue_length * 2  # fallback simple rule
+    except Exception:
+        return queue_length * 2
