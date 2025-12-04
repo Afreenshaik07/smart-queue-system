@@ -1,9 +1,10 @@
 import os
 import requests
-import json
 import logging
 
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+# CLEAN the environment key (remove spaces, newlines, tabs)
+raw_key = os.getenv("SENDGRID_API_KEY", "")
+SENDGRID_API_KEY = raw_key.strip().replace("\n", "").replace("\r", "")
 
 def send_email(to_email, subject, message):
     try:
@@ -28,7 +29,7 @@ def send_email(to_email, subject, message):
 
         response = requests.post(url, headers=headers, json=data)
 
-        if response.status_code >= 200 and response.status_code < 300:
+        if 200 <= response.status_code < 300:
             logging.info("✅ Email sent successfully")
         else:
             logging.error(f"❌ Email failed: {response.status_code} - {response.text}")
