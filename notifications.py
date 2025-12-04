@@ -1,10 +1,9 @@
 import os
 import requests
+import json
 import logging
 
-# CLEAN the environment key (remove spaces, newlines, tabs)
-raw_key = os.getenv("SENDGRID_API_KEY", "")
-SENDGRID_API_KEY = raw_key.strip().replace("\n", "").replace("\r", "")
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 
 def send_email(to_email, subject, message):
     try:
@@ -19,7 +18,7 @@ def send_email(to_email, subject, message):
             "personalizations": [{
                 "to": [{"email": to_email}]
             }],
-            "from": {"email": "queue-system@example.com"},
+            "from": {"email": "d88368817@gmail.com"},   # ✅ YOUR VERIFIED SENDER
             "subject": subject,
             "content": [{
                 "type": "text/plain",
