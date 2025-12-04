@@ -1,39 +1,37 @@
 import os
-import logging
 import requests
+import json
+import logging
 
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
-SENDGRID_URL = "https://api.sendgrid.com/v3/mail/send"
 
-logging.basicConfig(level=logging.INFO)
-
-def send_email(to_email, subject, content):
-    if not SENDGRID_API_KEY:
-        logging.error("❌ SENDGRID_API_KEY is missing!")
-        return False
-
-    headers = {
-        "Authorization": f"Bearer {SENDGRID_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    data = {
-        "personalizations": [
-            {"to": [{"email": to_email}],"subject": subject}
-        ],
-        "from": {"email": "no-reply@smartqueue.com"},
-        "content": [{"type": "text/plain","value": content}]
-    }
-
+def send_email(to_email, subject, message):
     try:
-        response = requests.post(SENDGRID_URL, headers=headers, json=data)
+        url = "https://api.sendgrid.com/v3/mail/send"
+
+        headers = {
+            "Authorization": f"Bearer {SENDGRID_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        data = {
+            "personalizations": [{
+                "to": [{"email": to_email}]
+            }],
+            "from": {"email": "queue-system@example.com"},
+            "subject": subject,
+            "content": [{
+                "type": "text/plain",
+                "value": message
+            }]
+        }
+
+        response = requests.post(url, headers=headers, json=data)
+
         if response.status_code >= 200 and response.status_code < 300:
-            logging.info(f"📧 Email sent to {to_email}")
-            return True
+            logging.info("✅ Email sent successfully")
         else:
-            logging.error(f"❌ SendGrid Error: {response.text}")
-            return False
+            logging.error(f"❌ Email failed: {response.status_code} - {response.text}")
 
     except Exception as e:
         logging.error(f"❌ ERROR sending email: {e}")
-        return False
